@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Swiss Stage Broadcast Graphic | Clan New Era</title>
+  <meta name="description" content="Sơ đồ phân nhánh Swiss Stage chuẩn đồ họa giải đấu ZingSpeed Mobile Clan New Era." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@500;600;700;800&display=swap"
+    rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js" crossorigin></script>
+
+  <link rel="stylesheet" href="css/theme.css" />
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 25%, #f8fafc 0%, #e2e8f0 65%, #cbd5e1 100%);
+      overflow-x: auto;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col items-center justify-start select-none">
+  <div id="root" class="w-full flex flex-col min-h-screen"></div>
+
+  <script src="js/tournament-data.js"></script>
+  <script src="js/tournament-engine.js"></script>
+
+  <script>
+    (function () {
+      'use strict';
+      const html = htm.bind(React.createElement);
+      const { useState, useEffect, useMemo } = React;
+      const Data = window.CLAN_TOURNAMENT_DATA;
+      const Engine = window.CLAN_TOURNAMENT_ENGINE;
+
+      const STORAGE_SWISS_KEY = 'clan_tournament_swiss_state';
+
+      function createDefaultDemoState() {
+        const groups = Engine.buildGroups(Data.DEFAULT_RACERS, 'pot_draw', 1);
+        const playIn = Engine.buildPlayInMatches(groups);
+        const pools = Engine.buildSwissPools(groups, playIn, {});
+        const winners = {};
+
+        function step(keys) {
+          const res = Engine.simulateSwissBracket(pools, winners, 1);
+          keys.forEach(function (k) {
+            (res.buckets[k] || []).forEach(function (m, idx) {
+              if (!winners[m.id] && m.p1 && m.p2) {
+                winners[m.id] = (idx % 2 === 0) ? m.p1.id : m.p2.id;
+              }
+            });
+          });
+        }
+        step(['r1_00']);
+        step(['r2_10', 'r2_01']);
+        step(['r3_20', 'r3_11', 'r3_02']);
+        step(['r4_21', 'r4_12']);
+        step(['r5_22']);
+
+        return {
+          seasonConfig: Data.DEFAULT_SEASON_CONFIG,
+          pools: pools,
+          swissResult: Engine.simulateSwissBracket(pools, winners, 1),
+          demoWinners: winners
+        };
+      }
+
+      function SwissBroadcastApp() {
+        const [viewMode, setViewMode] = useState('racers'); // 'racers' | 'pool_template'
+        const [interactiveDemo, setInteractiveDemo] = useState(false);
+        const [zoomLevel, setZoomLevel] = useState(1);
+        const [autoFit, setAutoFit] = useState(true);
+
+        const defaultDemo = useMemo(createDefaultDemoState, []);
+        const [seasonConfig, setSeasonConfig] = useState(defaultDemo.seasonConfig);
+        const [pools, setPools] = useState(defaultDemo.pools);
+        const [syncedSwissResult, setSyncedSwissResult] = useState(null);
+        const [localWinners, setLocalWinners] = useState(defaultDemo.demoWinners);
+
+        // Nạp dữ liệu từ localStorage & lắng nghe đồng bộ từ index.html
+        useEffect(function () {
+          function applyPayload(payload) {
+            if (!payload) return;
+            if (payload.seasonConfig) setSeasonConfig(payload.seasonConfig);
+            if (payload.pools) setPools(payload.pools);
+            if (payload.swissResult) setSyncedSwissResult(payload.swissResult);
+          }
+
+          try {
+            const cached = localStorage.getItem(STORAGE_SWISS_KEY);
+            if (cached) applyPayload(JSON.parse(cached));
+          } catch (e) { }
+
+          function onStorage(ev) {
+            if (ev.key === STORAGE_SWISS_KEY && ev.newValue) {
+              try { applyPayload(JSON.parse(ev.newValue)); } catch (e) { }
+            }
+          }
+          window.addEventListener('storage', onStorage);
+
+          let ch = null;
+          try {
+            if (typeof BroadcastChannel !== 'undefined') {
+              ch = new BroadcastChannel('clan_tournament_sync');
+              ch.onmessage = function (ev) { applyPayload(ev.data); };
+            }
+          } catch (e) { }
+
+          return function () {
+            window.removeEventListener('storage', onStorage);
+            if (ch) ch.close();
+          };
+        }, []);
+
+        const swissResult = useMemo(function () {
+          if (interactiveDemo) {
+            return Engine.simulateSwissBracket(pools, localWinners, 1);
+          }
+          return syncedSwissResult || defaultDemo.swissResult;
+        }, [interactiveDemo, pools, localWinners, syncedSwissResult, defaultDemo]);
+
+        // Auto-fit toàn màn hình
+        useEffect(function () {
+          function handleResize() {
+            if (!autoFit) return;
+            const w = window.innerWidth - 32;
+            const h = window.innerHeight - 90;
+            const scale = Math.min(Math.min(w / 1320, h / 780), 1.05);
+            setZoomLevel(Math.max(0.55, Number(scale.toFixed(2))));
+          }
+          handleResize();
+          window.addEventListener('resize', handleResize);
+          return function () { window.removeEventListener('resize', handleResize); };
+        }, [autoFit]);
+
+        function toggleFullscreen() {
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(function () { });
+          } else {
+            document.exitFullscreen();
+          }
+        }
+
+        function clickDemoWinner(matchId, playerId) {
+          if (!interactiveDemo) return;
+          const next = Object.assign({}, localWinners);
+          if (next[matchId] === playerId) delete next[matchId];
+          else next[matchId] = playerId;
+          setLocalWinners(next);
+        }
+
+        const buckets = swissResult.buckets || {};
+        const advancing = swissResult.advancing || [];
+        const eliminated = swissResult.eliminated || [];
+        const lineColor = '#5a8bd4';
+
+        function renderMatches(list, compact) {
+          const rows = list || [];
+          if (rows.length === 0) {
+            return html`<div className="text-[10px] text-slate-400 font-bold">Chờ kết quả</div>`;
+          }
+          return rows.map(function (m, idx) {
+            const p1Name = m.p1 ? m.p1.name : 'TBD';
+            const p2Name = m.p2 ? m.p2.name : 'TBD';
+            const p1Win = m.winnerId && m.p1 && m.winnerId === m.p1.id;
+            const p2Win = m.winnerId && m.p2 && m.winnerId === m.p2.id;
+            const textCls = compact ? 'text-[10.5px]' : 'text-[11px]';
+            const gapCol = compact ? 'grid-cols-[1fr_18px_1fr]' : 'grid-cols-[1fr_22px_1fr]';
+
+            return html`
+              <div key=${m.id || idx} className=${'grid ' + gapCol + ' items-center leading-none py-0.5 ' + textCls}>
+                <span
+                  onClick=${function () { if (m.p1) clickDemoWinner(m.id, m.p1.id); }}
+                  className=${'text-right truncate pr-1 font-bold tracking-tight ' + (interactiveDemo ? 'cursor-pointer hover:text-blue-600 ' : '') + (p1Win ? 'text-blue-700 underline' : 'text-slate-900')}
+                  title=${p1Name}
+                >
+                  ${p1Name}
+                </span>
+                <span className="text-[#1d4ed8] text-[8.5px] font-black text-center uppercase">vs</span>
+                <span
+                  onClick=${function () { if (m.p2) clickDemoWinner(m.id, m.p2.id); }}
+                  className=${'text-left truncate pl-1 font-bold tracking-tight ' + (interactiveDemo ? 'cursor-pointer hover:text-blue-600 ' : '') + (p2Win ? 'text-blue-700 underline' : 'text-slate-900')}
+                  title=${p2Name}
+                >
+                  ${p2Name}
+                </span>
+              </div>
+            `;
+          });
+        }
+
+        function renderTemplateVs(count, prefix) {
+          const arr = [];
+          for (let i = 1; i <= count; i++) arr.push(i);
+          return arr.map(function (i) {
+            return html`<div key=${prefix + '_' + i} className="font-extrabold text-[#1d4ed8] text-[13px] tracking-wide">VS</div>`;
+          });
+        }
+
+        return html`
+          <div className="w-full flex flex-col min-h-screen">
+            <!-- Control Bar -->
+            <div className="no-print w-full px-6 py-2.5 bg-white/95 backdrop-blur border-b border-blue-200 flex flex-wrap items-center justify-between text-xs gap-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <a
+                  href="index.html"
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white rounded-lg border border-blue-200 font-bold transition-all"
+                >
+                  ← Về Cổng Kế Hoạch
+                </a>
+                <div className="h-4 w-px bg-slate-300"></div>
+                <span className="font-chakra font-bold text-slate-800 uppercase">
+                  Broadcast Swiss Stage (${seasonConfig.seasonCode})
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button
+                    onClick=${function () { setViewMode('racers'); }}
+                    className=${'px-3 py-1 rounded-md font-bold transition-all ' + (viewMode === 'racers' ? 'bg-[#004de6] text-white' : 'text-slate-600')}
+                  >
+                    Đầy Đủ Tuyển Thủ
+                  </button>
+                  <button
+                    onClick=${function () { setViewMode('pool_template'); }}
+                    className=${'px-3 py-1 rounded-md font-bold transition-all ' + (viewMode === 'pool_template' ? 'bg-[#004de6] text-white' : 'text-slate-600')}
+                  >
+                    Khung Mẫu Pool
+                  </button>
+                </div>
+
+                <button
+                  onClick=${function () { setInteractiveDemo(!interactiveDemo); }}
+                  className=${'px-3 py-1.5 rounded-lg font-bold border transition-all ' + (interactiveDemo ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50')}
+                >
+                  ${interactiveDemo ? 'Click Chọn Thắng/Thua: BẬT' : 'Click Chọn Thắng/Thua: TẮT'}
+                </button>
+
+                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button
+                    onClick=${function () { setAutoFit(!autoFit); if (autoFit) setZoomLevel(1); }}
+                    className=${'px-2 py-1 rounded font-bold ' + (autoFit ? 'bg-blue-600 text-white' : 'text-slate-600')}
+                  >
+                    Auto-Fit
+                  </button>
+                  <button onClick=${function () { setAutoFit(false); setZoomLevel(Math.max(0.5, Number((zoomLevel - 0.05).toFixed(2)))); }} className="px-1.5 py-1 font-bold text-slate-700">-</button>
+                  <span className="font-mono text-[11px] px-1">${Math.round(zoomLevel * 100)}%</span>
+                  <button onClick=${function () { setAutoFit(false); setZoomLevel(Math.min(1.3, Number((zoomLevel + 0.05).toFixed(2)))); }} className="px-1.5 py-1 font-bold text-slate-700">+</button>
+                </div>
+
+                <button onClick=${toggleFullscreen} className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 font-bold">
+                  Toàn Màn Hình
+                </button>
+                <button onClick=${function () { window.print(); }} className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 font-bold">
+                  In / PDF
+                </button>
+              </div>
+            </div>
+
+            <!-- Main Broadcast Canvas -->
+            <main className="flex-1 flex items-center justify-center p-2 sm:p-4 overflow-auto">
+              <div
+                style=${{ transform: 'scale(' + zoomLevel + ')', transformOrigin: 'top center', transition: 'transform 0.15s ease-out' }}
+                className="w-[1300px] shrink-0 relative pb-6"
+              >
+                <!-- Top Header -->
+                <div className="relative z-10 pt-2 pb-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-[#1d4ed8] uppercase pb-2 px-2">
+                    ${(seasonConfig.locationTags || ['ZING SPEED MOBILE', 'HÀ NỘI', 'ĐÀ NẴNG', 'TP. HỒ CHÍ MINH']).map(function (tag, i) {
+                      return html`<span key=${i}>${tag}</span>`;
+                    })}
+                    <span>${seasonConfig.seasonCode}</span>
+                    <span>${seasonConfig.slogan}</span>
+                  </div>
+
+                  <div className="flex flex-col items-center justify-center mt-1">
+                    <div className="flex items-center justify-center gap-4">
+                      <div className="w-16 h-16 rounded-xl ne-badge-logo flex items-center justify-center p-2 shrink-0">
+                        <img src="logo_trang.png" alt="New Era Logo" className="w-full h-full object-contain" />
+                      </div>
+                      <h1 className="font-anton text-[76px] leading-none tracking-[0.02em] text-slate-950 uppercase m-0 p-0">
+                        SWISS STAGE
+                      </h1>
+                    </div>
+                    <div className="mt-2.5">
+                      <div className="bg-[#004de6] text-white font-bold text-xs uppercase tracking-[0.2em] px-8 py-1 rounded-[3px] shadow-sm">
+                        ${seasonConfig.slogan}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Bracket Tree -->
+                <div className="w-[1280px] h-[640px] relative mx-auto mt-2 z-10">
+                  <svg className="absolute inset-0 w-[1280px] h-[640px] pointer-events-none z-0">
+                    <path d="M 215 350 H 232 V 195 H 250" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 232 350 V 530 H 250" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+
+                    <path d="M 420 195 H 437 V 100 H 455" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 437 195 V 355 H 455" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+
+                    <path d="M 420 530 H 437 V 355 H 455" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 437 530 V 580 H 455" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+
+                    <path d="M 625 100 H 642 V 73 H 660" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 642 100 V 230 H 660" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+
+                    <path d="M 625 355 H 642 V 230 H 660" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 642 355 V 465 H 660" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+
+                    <path d="M 625 580 H 642 V 465 H 660" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 642 580 V 593 H 660" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+
+                    <path d="M 830 230 H 847 V 168 H 865" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 847 230 V 345 H 865" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+
+                    <path d="M 830 465 H 847 V 345 H 865" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 847 465 V 498 H 865" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+
+                    <path d="M 1035 345 H 1050 V 283 H 1065" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                    <path d="M 1050 345 V 418 H 1065" stroke=${lineColor} strokeWidth="1.5" fill="none" />
+                  </svg>
+
+                  <!-- CỘT 1: 0-0 -->
+                  <div className="absolute left-[30px] top-[190px] w-[185px] text-center font-bold text-sm text-[#1d4ed8]">0-0</div>
+                  <div style=${{ left: '30px', top: '215px', width: '185px', height: '270px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-2">
+                      ${viewMode === 'pool_template' ? html`
+                        ${[1, 2, 3, 4, 5].map(function (i) {
+                          return html`
+                            <div key=${'p13_' + i} className="grid grid-cols-[1fr_22px_1fr] items-center text-xs leading-none">
+                              <span className="font-oswald font-black text-black text-[13px] text-right pr-1">POOL 1</span>
+                              <span className="font-extrabold text-[#1d4ed8] text-[11px] text-center">VS</span>
+                              <span className="font-oswald font-black text-black text-[13px] text-left pl-1">POOL 3</span>
+                            </div>
+                          `;
+                        })}
+                        ${[1, 2, 3].map(function (i) {
+                          return html`
+                            <div key=${'p22_' + i} className="grid grid-cols-[1fr_22px_1fr] items-center text-xs leading-none">
+                              <span className="font-oswald font-black text-black text-[13px] text-right pr-1">POOL 2</span>
+                              <span className="font-extrabold text-[#1d4ed8] text-[11px] text-center">VS</span>
+                              <span className="font-oswald font-black text-black text-[13px] text-left pl-1">POOL 2</span>
+                            </div>
+                          `;
+                        })}
+                      ` : renderMatches(buckets.r1_00, false)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 1-ROUND</span>
+                      <span>ROUND 1</span>
+                    </div>
+                  </div>
+
+                  <!-- CỘT 2: 1-0 & 0-1 -->
+                  <div className="absolute left-[250px] top-[95px] w-[170px] text-center font-bold text-sm text-[#1d4ed8]">1-0</div>
+                  <div style=${{ left: '250px', top: '120px', width: '170px', height: '155px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-1.5 text-center">
+                      ${viewMode === 'pool_template' ? renderTemplateVs(4, 'r2h') : renderMatches(buckets.r2_10, true)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 1-ROUND</span>
+                      <span>ROUND 2</span>
+                    </div>
+                  </div>
+
+                  <div className="absolute left-[250px] top-[430px] w-[170px] text-center font-bold text-sm text-[#1d4ed8]">0-1</div>
+                  <div style=${{ left: '250px', top: '455px', width: '170px', height: '155px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-1.5 text-center">
+                      ${viewMode === 'pool_template' ? renderTemplateVs(4, 'r2l') : renderMatches(buckets.r2_01, true)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 1-ROUND</span>
+                      <span>ROUND 2</span>
+                    </div>
+                  </div>
+
+                  <!-- CỘT 3: 2-0, 1-1, 0-2 -->
+                  <div className="absolute left-[455px] top-[26px] w-[170px] text-center font-bold text-sm text-[#1d4ed8]">2-0</div>
+                  <div style=${{ left: '455px', top: '50px', width: '170px', height: '105px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-1.5 text-center">
+                      ${viewMode === 'pool_template' ? renderTemplateVs(2, 'r3h') : renderMatches(buckets.r3_20, true)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 3-ROUND</span>
+                      <span>ROUND 3</span>
+                    </div>
+                  </div>
+
+                  <div className="absolute left-[455px] top-[256px] w-[170px] text-center font-bold text-sm text-[#1d4ed8]">1-1</div>
+                  <div style=${{ left: '455px', top: '280px', width: '170px', height: '155px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-1.5 text-center">
+                      ${viewMode === 'pool_template' ? renderTemplateVs(4, 'r3m') : renderMatches(buckets.r3_11, true)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 1-ROUND</span>
+                      <span>ROUND 3</span>
+                    </div>
+                  </div>
+
+                  <div className="absolute left-[455px] top-[506px] w-[170px] text-center font-bold text-sm text-[#1d4ed8]">0-2</div>
+                  <div style=${{ left: '455px', top: '530px', width: '170px', height: '105px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-1.5 text-center">
+                      ${viewMode === 'pool_template' ? renderTemplateVs(2, 'r3l') : renderMatches(buckets.r3_02, true)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 3-ROUND</span>
+                      <span>ROUND 3</span>
+                    </div>
+                  </div>
+
+                  <!-- CỘT 4: ADVANCES 1ST/2ND, 2-1, 1-2, ELIMINATED (0-3) -->
+                  <div className="absolute left-[660px] top-[28px] w-[160px] flex items-center justify-between text-xs font-bold text-[#1d4ed8] px-1">
+                    <span>ADVANCES</span>
+                    <span>1ST/2ND</span>
+                  </div>
+                  <div style=${{ left: '660px', top: '50px', width: '160px', height: '46px' }} className="absolute broadcast-box flex divide-x-[1.5px] divide-[#5a8bd4] z-10">
+                    ${[0, 1].map(function (idx) {
+                      const item = advancing[idx];
+                      return html`
+                        <div key=${'adv12_' + idx} className="flex-1 flex flex-col items-center justify-center py-0.5 px-1 text-center overflow-hidden">
+                          ${viewMode === 'pool_template'
+                            ? html`<span className="font-bold text-[#1d4ed8] text-base">/</span>`
+                            : html`
+                              <span className="text-[10px] font-bold text-[#1d4ed8] leading-none">${item ? item.seedLabel : ('#' + (idx + 1) + ' (3-0)')}</span>
+                              <span className="text-[11px] font-black text-slate-900 truncate max-w-[70px] mt-0.5">${item ? item.player.name : 'TBD'}</span>
+                            `}
+                        </div>
+                      `;
+                    })}
+                  </div>
+
+                  <div className="absolute left-[660px] top-[141px] w-[170px] text-center font-bold text-sm text-[#1d4ed8]">2-1</div>
+                  <div style=${{ left: '660px', top: '165px', width: '170px', height: '130px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-1.5 text-center">
+                      ${viewMode === 'pool_template' ? renderTemplateVs(3, 'r4h') : renderMatches(buckets.r4_21, true)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 3-ROUND</span>
+                      <span>ROUND 4</span>
+                    </div>
+                  </div>
+
+                  <div className="absolute left-[660px] top-[376px] w-[170px] text-center font-bold text-sm text-[#1d4ed8]">1-2</div>
+                  <div style=${{ left: '660px', top: '400px', width: '170px', height: '130px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-1.5 text-center">
+                      ${viewMode === 'pool_template' ? renderTemplateVs(3, 'r4l') : renderMatches(buckets.r4_12, true)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 3-ROUND</span>
+                      <span>ROUND 4</span>
+                    </div>
+                  </div>
+
+                  <div className="absolute left-[660px] top-[550px] text-left text-xs font-bold text-slate-500 px-1">- ELIMINATED</div>
+                  <div style=${{ left: '660px', top: '570px', width: '160px', height: '46px' }} className="absolute broadcast-box-eliminated flex divide-x-[1.5px] divide-slate-400 z-10">
+                    ${[0, 1].map(function (idx) {
+                      const e03 = eliminated.filter(function (x) { return x.score === '0-3'; })[idx];
+                      return html`
+                        <div key=${'el03_' + idx} className="flex-1 flex flex-col items-center justify-center py-0.5 px-1 text-center overflow-hidden">
+                          ${viewMode === 'pool_template'
+                            ? html`<span className="font-bold text-slate-500 text-base">/</span>`
+                            : html`
+                              <span className="text-[10px] font-bold text-slate-500 leading-none">0-3</span>
+                              <span className="text-[11px] font-bold text-slate-700 truncate max-w-[70px] mt-0.5">${e03 ? e03.player.name : 'TBD'}</span>
+                            `}
+                        </div>
+                      `;
+                    })}
+                  </div>
+
+                  <!-- CỘT 5: ADVANCES 3RD/4TH/5TH, 2-2, ELIMINATED (1-3) -->
+                  <div className="absolute left-[865px] top-[123px] w-[220px] flex items-center justify-between text-xs font-bold text-[#1d4ed8] px-1">
+                    <span>ADVANCES</span>
+                    <span>3RD/4TH/5TH</span>
+                  </div>
+                  <div style=${{ left: '865px', top: '145px', width: '220px', height: '46px' }} className="absolute broadcast-box flex divide-x-[1.5px] divide-[#5a8bd4] z-10">
+                    ${[2, 3, 4].map(function (idx) {
+                      const item = advancing[idx];
+                      return html`
+                        <div key=${'adv35_' + idx} className="flex-1 flex flex-col items-center justify-center py-0.5 px-1 text-center overflow-hidden">
+                          ${viewMode === 'pool_template'
+                            ? html`<span className="font-bold text-[#1d4ed8] text-base">/</span>`
+                            : html`
+                              <span className="text-[10px] font-bold text-[#1d4ed8] leading-none">${item ? item.seedLabel : ('#' + (idx + 1) + ' (3-1)')}</span>
+                              <span className="text-[11px] font-black text-slate-900 truncate max-w-[65px] mt-0.5">${item ? item.player.name : 'TBD'}</span>
+                            `}
+                        </div>
+                      `;
+                    })}
+                  </div>
+
+                  <div className="absolute left-[865px] top-[256px] w-[170px] text-center font-bold text-sm text-[#1d4ed8]">2-2</div>
+                  <div style=${{ left: '865px', top: '280px', width: '170px', height: '130px' }} className="absolute broadcast-box flex flex-col justify-between z-10">
+                    <div className="flex-1 flex flex-col justify-around py-1 px-1.5 text-center">
+                      ${viewMode === 'pool_template' ? renderTemplateVs(3, 'r5d') : renderMatches(buckets.r5_22, true)}
+                    </div>
+                    <div className="broadcast-footer px-2.5 py-1 flex items-center justify-between">
+                      <span>BO7 3-ROUND</span>
+                      <span>ROUND 5</span>
+                    </div>
+                  </div>
+
+                  <div className="absolute left-[865px] top-[455px] text-left text-xs font-bold text-slate-500 px-1">- ELIMINATED</div>
+                  <div style=${{ left: '865px', top: '475px', width: '220px', height: '46px' }} className="absolute broadcast-box-eliminated flex divide-x-[1.5px] divide-slate-400 z-10">
+                    ${[0, 1, 2].map(function (idx) {
+                      const e13 = eliminated.filter(function (x) { return x.score === '1-3'; })[idx];
+                      return html`
+                        <div key=${'el13_' + idx} className="flex-1 flex flex-col items-center justify-center py-0.5 px-1 text-center overflow-hidden">
+                          ${viewMode === 'pool_template'
+                            ? html`<span className="font-bold text-slate-500 text-base">/</span>`
+                            : html`
+                              <span className="text-[10px] font-bold text-slate-500 leading-none">1-3</span>
+                              <span className="text-[11px] font-bold text-slate-700 truncate max-w-[65px] mt-0.5">${e13 ? e13.player.name : 'TBD'}</span>
+                            `}
+                        </div>
+                      `;
+                    })}
+                  </div>
+
+                  <!-- CỘT 6: ADVANCES 6TH/7TH/8TH & ELIMINATED (2-3) -->
+                  <div className="absolute left-[1065px] top-[238px] w-[220px] flex items-center justify-between text-xs font-bold text-[#1d4ed8] px-1">
+                    <span>ADVANCES</span>
+                    <span>6TH/7TH/8TH</span>
+                  </div>
+                  <div style=${{ left: '1065px', top: '260px', width: '220px', height: '46px' }} className="absolute broadcast-box flex divide-x-[1.5px] divide-[#5a8bd4] z-10">
+                    ${[5, 6, 7].map(function (idx) {
+                      const item = advancing[idx];
+                      return html`
+                        <div key=${'adv68_' + idx} className="flex-1 flex flex-col items-center justify-center py-0.5 px-1 text-center overflow-hidden">
+                          ${viewMode === 'pool_template'
+                            ? html`<span className="font-bold text-[#1d4ed8] text-base">/</span>`
+                            : html`
+                              <span className="text-[10px] font-bold text-[#1d4ed8] leading-none">${item ? item.seedLabel : ('#' + (idx + 1) + ' (3-2)')}</span>
+                              <span className="text-[11px] font-black text-slate-900 truncate max-w-[65px] mt-0.5">${item ? item.player.name : 'TBD'}</span>
+                            `}
+                        </div>
+                      `;
+                    })}
+                  </div>
+
+                  <div className="absolute left-[1065px] top-[373px] text-left text-xs font-bold text-slate-500 px-1">- ELIMINATED</div>
+                  <div style=${{ left: '1065px', top: '395px', width: '220px', height: '46px' }} className="absolute broadcast-box-eliminated flex divide-x-[1.5px] divide-slate-400 z-10">
+                    ${[0, 1, 2].map(function (idx) {
+                      const e23 = eliminated.filter(function (x) { return x.score === '2-3'; })[idx];
+                      return html`
+                        <div key=${'el23_' + idx} className="flex-1 flex flex-col items-center justify-center py-0.5 px-1 text-center overflow-hidden">
+                          ${viewMode === 'pool_template'
+                            ? html`<span className="font-bold text-slate-500 text-base">/</span>`
+                            : html`
+                              <span className="text-[10px] font-bold text-slate-500 leading-none">2-3</span>
+                              <span className="text-[11px] font-bold text-slate-700 truncate max-w-[65px] mt-0.5">${e23 ? e23.player.name : 'TBD'}</span>
+                            `}
+                        </div>
+                      `;
+                    })}
+                  </div>
+                </div>
+              </div>
+            </main>
+          </div>
+        `;
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(html`<${SwissBroadcastApp} />`);
+    })();
+  </script>
+</body>
+
+</html>

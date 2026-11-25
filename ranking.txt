@@ -1,0 +1,71 @@
+Dưới đây là bản Tổng hợp toàn bộ Ý tưởng & Khung vận hành Hệ thống Tính điểm Biến động (GPR) được thiết kế riêng cho Clan ZingSpeed Mobile của bạn.
+Bạn có thể lưu lại toàn bộ tài liệu này để làm bộ quy chuẩn cấu hình file Excel và công bố cho Clan vào mùa giải tới.
+------------------------------
+## 🏆 KHUNG VẬN HÀNH GIẢI ĐẤU ZINGSPEED MOBILE CLAN (MÙA SAU)## I. CẤU TRÚC GIẢI ĐẤU 5 GIAI ĐOẠN & HỆ SỐ ĐIỂM (K-FACTOR)
+Để tạo sự kịch tính, điểm số gốc của tay đua nhận được sau mỗi trận sẽ được nhân với Hệ số vòng đấu (K). Càng vào sâu, điểm thưởng càng lớn.
+$$\text{Tổng điểm 1 trận} = (\text{Điểm kết quả gốc} \times \text{Hệ số vòng K}) + \text{Điểm chuyên cần}$$ 
+
+| Giai đoạn | Thể thức thi đấu | Hệ số vòng (K) | Điểm chuyên cần | Quy ước Thắng / Bại |
+|---|---|---|---|---|
+| 1. Vòng Bảng | Đua phòng 6 người | x 1.0 | +2 điểm / trận | Top 3 = Thắng (W) Top 4-6 / DNF = Thua (L) |
+| 2. Vòng Thụy Sĩ | Đua phòng phân tầng | x 1.5 | +2 điểm / trận | Theo hệ thống Thụy Sĩ (3W đi tiếp, 3L bị loại) |
+| 3. Vòng Tứ Kết | Solo 1v1 (BO3) | x 2.0 | +5 điểm / loạt | Thắng/Thua theo kết quả trận đấu |
+| 4. Vòng Bán Kết | Solo 1v1 (BO3/BO5) | x 2.5 | +5 điểm / loạt | Thắng/Thua theo kết quả trận đấu |
+| 5. Chung Kết | Solo 1v1 (BO5/BO7) | x 3.0 | +5 điểm / loạt | Thắng/Thua theo kết quả trận đấu |
+
+------------------------------
+## II. QUY ĐỔI ĐIỂM GỐC THEO THỂ THỨC## 1. Thể thức Đua Phòng (Áp dụng: Vòng Bảng & Thụy Sĩ)
+
+* Hạng 1: +10 điểm gốc (Tính là 1 trận Thắng - W)
+* Hạng 2: +8 điểm gốc (Tính là 1 trận Thắng - W)
+* Hạng 3: +6 điểm gốc (Tính là 1 trận Thắng - W)
+* Hạng 4: +4 điểm gốc (Tính là 1 trận Thua - L)
+* Hạng 5: +3 điểm gốc (Tính là 1 trận Thua - L)
+* Hạng 6: +2 điểm gốc (Tính là 1 trận Thua - L)
+* Lỗi DNF (Không về đích): -2 điểm phạt trực tiếp (Tính là 1 trận Thua - L)
+
+## 2. Thể thức Solo 1v1 (Áp dụng: Tứ Kết ➔ Chung Kết)
+
+* Thắng chung cuộc (Series BO3/BO5): +15 điểm gốc
+* Thua sát nút (Tỷ số 1-2 hoặc 2-3): +6 điểm gốc (Khuyến khích)
+* Thua trắng (Tỷ số 0-2 hoặc 0-3): +2 điểm gốc
+* Bỏ cuộc không đấu (Walkover): 0 điểm (Không nhận điểm chuyên cần)
+
+------------------------------
+## III. CHỈ SỐ PHỤ & PHÂN BẬC HẠT GIỐNG (TƯ DUY LMHT)
+Khi kết thúc một vòng đấu hoặc kết thúc mùa giải, nếu các tay đua bằng điểm nhau, Excel sẽ tự động phân bậc từ trên xuống dưới theo các chỉ số phụ sau:
+
+   1. Hiệu số Trận (Match Record): Ưu tiên tay đua có số trận Thắng (W) nhiều hơn.
+   2. Tỷ lệ Thắng (Win Rate %): Số trận Thắng / Tổng số trận đã tham gia.
+   3. Số lần đạt Top 1 Map: Số ván lẻ cán đích vị trí số 1 (đối với Đua Phòng).
+   4. Hiệu số Ván lẻ (Game Record): Hiệu số giữa số ván thắng và ván thua trong loạt trận Solo 1v1 (Ví dụ: Thắng 2-0 sẽ xếp trên thắng 2-1).
+   5. Chỉ số ổn định: Ưu tiên tay đua có số trận bị DNF ít hơn.
+
+------------------------------
+## IV. CƠ CHẾ BIẾN ĐỘNG THEO THỜI GIAN (DECAY & TÂN BINH)
+Để bảng xếp hạng luôn phản ánh đúng phong độ thực tế và tránh tình trạng "ôm rank nghỉ đấu", hệ thống áp dụng cơ chế khấu trừ điểm khi chuyển giao giữa các mùa giải (Mùa Xuân ➔ Mùa Thu):
+
+* Tiếp tục thi đấu liên tục: Giữ nguyên 100% điểm tích lũy.
+* Vắng mặt 1 mùa giải: Khấu trừ 20% tổng điểm cũ (Còn 80%).
+* Vắng mặt 2 mùa giải liên tiếp: Khấu trừ 50% tổng điểm cũ (Còn 50%).
+* Người mới (Tân binh) HOẶC Người cũ vắng mặt > 2 mùa:
+* Xóa toàn bộ điểm cũ (nếu có).
+   * Cấp Điểm Sàn Nhập Cuộc (Baseline): 100 điểm (Mức trung bình hệ thống).
+   * Điều kiện kích hoạt điểm sàn: Phải hoàn thành tối thiểu 3 trận phân hạng đầu tiên của mùa giải mới.
+
+------------------------------
+## V. QUY TẮC PHÒNG NGỪA RỦI RO (LUẬT BTC)
+
+   1. Đổi tên/Đổi nick: Quản lý thành viên bắt buộc bằng ID nhân vật cố định trên Excel, không quản lý bằng tên. Đổi tên không báo cáo trước với BTC sẽ bị phạt -10 điểm.
+   2. Sự cố mạng (Lag/Disconnet): Nếu lỗi do hệ thống phòng/game ➔ Đá lại (Rematch). Nếu lỗi cá nhân (rớt mạng, bận cuộc gọi) ➔ Trận đấu tiếp tục, không về đích kịp tính là DNF.
+   3. Người đóng thế (Substitute): Tuyệt đối không chấp nhận người đua hộ từ Vòng Tứ Kết trở đi. Vắng mặt xử thua trắng (Walkover).
+
+------------------------------
+## 📂 GỢI Ý CẤU TRÚC FILE EXCEL BẠN SẼ XÂY DỰNG:
+
+* Tab 1: Bảng Xếp Hạng Tổng (Dashboard): Hiển thị ID, Tên, Tổng Điểm, Tỷ lệ thắng (%), Trạng thái hoạt động (Có tham gia / Vắng 1 mùa / Người mới...). Dùng hàm SUMIFS và VLOOKUP để nhặt dữ liệu tự động từ các Tab lịch sử.
+* Tab 2: Lịch Sử Đua Phòng: Nơi nhập liệu kết quả Vòng Bảng và Thụy Sĩ (Ghi nhận Thứ hạng 1-6 hoặc DNF).
+* Tab 3: Lịch Sử Đấu Solo: Nơi nhập liệu kết quả các trận đấu 1v1 từ Tứ Kết đến Chung Kết (Ghi nhận Tỷ số 2-1, 3-0...).
+
+Bản tổng hợp này đã tối ưu và bao quát mọi trường hợp cho giải đấu mùa sau của bạn chưa? Nếu bạn cần, bất cứ lúc nào ở mùa giải tới, bạn chỉ cần yêu cầu và tôi sẽ xuất thẳng file Excel (.xlsx) được lập trình sẵn toàn bộ các công thức này cho bạn!
+

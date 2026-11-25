@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clan New Era | Cổng Thông Tin Kế Hoạch, Luật & New Era Ranking</title>
+  <meta name="description"
+    content="Cổng thông tin kế hoạch giải đấu ZingSpeed Mobile Clan New Era: Lộ trình 13 ngày, Luật Ban/Pick Xe & Map, Kho Xe/Pet/Map, New Era Ranking & Mô phỏng Swiss Stage." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Anton&family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600;700&display=swap"
+    rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js" crossorigin></script>
+
+  <link rel="stylesheet" href="css/theme.css" />
+</head>
+
+<body class="min-h-screen antialiased">
+  <div id="root"></div>
+
+  <!-- Core Data & Pure Engine -->
+  <script src="js/tournament-data.js"></script>
+  <script src="js/tournament-engine.js"></script>
+
+  <!-- Views -->
+  <script src="js/views/OverviewView.js"></script>
+  <script src="js/views/RulesHandbookView.js"></script>
+  <script src="js/views/GarageMapsView.js"></script>
+  <script src="js/views/ScoringGprView.js"></script>
+  <script src="js/views/SimulatorView.js"></script>
+
+  <script>
+    (function () {
+      'use strict';
+      const html = htm.bind(React.createElement);
+      const { useState, useMemo, useEffect } = React;
+      const Data = window.CLAN_TOURNAMENT_DATA;
+      const Engine = window.CLAN_TOURNAMENT_ENGINE;
+      const Views = window.CLAN_VIEWS;
+
+      const STORAGE_CONFIG_KEY = 'clan_tournament_config_v3';
+      const STORAGE_SWISS_KEY = 'clan_tournament_swiss_state';
+
+      function getUrlMode() {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          return params.get('mode');
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function getInitialRoleMode() {
+        const qMode = getUrlMode();
+        if (qMode === 'client' || qMode === 'btc') return qMode;
+        try {
+          const savedMode = localStorage.getItem('clan_tournament_role_mode');
+          if (savedMode === 'client' || savedMode === 'btc') return savedMode;
+        } catch (e) { }
+        return 'btc';
+      }
+
+      function loadSavedConfig() {
+        try {
+          const raw = localStorage.getItem(STORAGE_CONFIG_KEY);
+          if (!raw) return null;
+          return JSON.parse(raw);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function App() {
+        const saved = useMemo(loadSavedConfig, []);
+        const isLockedClient = useMemo(function () {
+          return getUrlMode() === 'client';
+        }, []);
+
+        const [roleMode, setRoleMode] = useState(getInitialRoleMode);
+        const [copiedClientLink, setCopiedClientLink] = useState(false);
+
+        const [seasonConfig, setSeasonConfig] = useState(
+          (saved && saved.seasonConfig) || Data.DEFAULT_SEASON_CONFIG
+        );
+        const [cars, setCars] = useState((saved && saved.cars) || Data.DEFAULT_CARS);
+        const [pets, setPets] = useState((saved && saved.pets) || Data.DEFAULT_PETS);
+        const [maps, setMaps] = useState((saved && saved.maps) || Data.DEFAULT_MAPS);
+        const [racers, setRacers] = useState((saved && saved.racers) || Data.DEFAULT_RACERS);
+        const [globalRanking, setGlobalRanking] = useState(
+          (saved && saved.globalRanking) || Data.DEFAULT_GLOBAL_RANKING
+        );
+
+        const [activeTab, setActiveTab] = useState('overview');
+        const [seedMethod, setSeedMethod] = useState('pot_draw');
+        const [drawSeed, setDrawSeed] = useState(1);
+        const [playInWinners, setPlayInWinners] = useState({});
+        const [swissWinners, setSwissWinners] = useState({});
+        const [playoffWinners, setPlayoffWinners] = useState({});
+
+        const isBtc = !isLockedClient && roleMode === 'btc';
+
+        useEffect(function () {
+          if (isLockedClient) return;
+          try {
+            localStorage.setItem('clan_tournament_role_mode', roleMode);
+          } catch (e) { }
+        }, [roleMode, isLockedClient]);
+
+        // Lưu cấu hình (Season, Cars, Pets, Maps, Racers, New Era Ranking)
+        useEffect(function () {
+          if (isLockedClient) return;
+          try {
+            localStorage.setItem(STORAGE_CONFIG_KEY, JSON.stringify({
+              seasonConfig: seasonConfig,
+              cars: cars,
+              pets: pets,
+              maps: maps,
+              racers: racers,
+              globalRanking: globalRanking
+            }));
+          } catch (e) { }
+        }, [seasonConfig, cars, pets, maps, racers, globalRanking, isLockedClient]);
+
+        // Tính toán mô phỏng giải đấu
+        const simData = useMemo(function () {
+          const groups = Engine.buildGroups(racers, seedMethod, drawSeed);
+          const playInMatches = Engine.buildPlayInMatches(groups);
+          const pools = Engine.buildSwissPools(groups, playInMatches, playInWinners);
+          const swissResult = Engine.simulateSwissBracket(pools, swissWinners, drawSeed);
+          const playoffBracket = Engine.buildPlayoffBracket(swissResult.advancing, playoffWinners);
+          return {
+            groups: groups,
+            playInMatches: playInMatches,
+            pools: pools,
+            swissResult: swissResult,
+            playoffBracket: playoffBracket
+          };
+        }, [racers, seedMethod, drawSeed, playInWinners, swissWinners, playoffWinners]);
+
+        // Đồng bộ trạng thái Swiss sang swiss.html
+        useEffect(function () {
+          const payload = {
+            seasonConfig: seasonConfig,
+            pools: simData.pools,
+            swissResult: simData.swissResult,
+            updatedAt: Date.now()
+          };
+          try {
+            localStorage.setItem(STORAGE_SWISS_KEY, JSON.stringify(payload));
+          } catch (e) { }
+          try {
+            if (typeof BroadcastChannel !== 'undefined') {
+              const ch = new BroadcastChannel('clan_tournament_sync');
+              ch.postMessage(payload);
+              ch.close();
+            }
+          } catch (e) { }
+        }, [seasonConfig, simData]);
+
+        function handleResetSimResults() {
+          setPlayInWinners({});
+          setSwissWinners({});
+          setPlayoffWinners({});
+        }
+
+        function handleAutoSimulateSwiss() {
+          const nextWinners = {};
+          const groups = Engine.buildGroups(racers, seedMethod, drawSeed);
+          const playInMatches = Engine.buildPlayInMatches(groups);
+          const pools = Engine.buildSwissPools(groups, playInMatches, playInWinners);
+
+          function simRoundStep(currentWinners, bucketKeys) {
+            const res = Engine.simulateSwissBracket(pools, currentWinners, drawSeed);
+            bucketKeys.forEach(function (k) {
+              (res.buckets[k] || []).forEach(function (m, idx) {
+                if (!currentWinners[m.id] && m.p1 && m.p2) {
+                  const pickP1 = (m.p1.points >= m.p2.points) ? (idx % 3 !== 2) : (idx % 3 === 0);
+                  currentWinners[m.id] = pickP1 ? m.p1.id : m.p2.id;
+                }
+              });
+            });
+          }
+
+          simRoundStep(nextWinners, ['r1_00']);
+          simRoundStep(nextWinners, ['r2_10', 'r2_01']);
+          simRoundStep(nextWinners, ['r3_20', 'r3_11', 'r3_02']);
+          simRoundStep(nextWinners, ['r4_21', 'r4_12']);
+          simRoundStep(nextWinners, ['r5_22']);
+
+          setSwissWinners(nextWinners);
+          setPlayoffWinners({});
+        }
+
+        function handleExportJson() {
+          const blob = new Blob([JSON.stringify({
+            seasonConfig: seasonConfig,
+            cars: cars,
+            pets: pets,
+            maps: maps,
+            racers: racers,
+            globalRanking: globalRanking
+          }, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = (seasonConfig.seasonCode || 'tournament') + '_config.json';
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+
+        function handleImportJson(file) {
+          const reader = new FileReader();
+          reader.onload = function (ev) {
+            try {
+              const parsed = JSON.parse(ev.target.result);
+              if (parsed.seasonConfig) setSeasonConfig(parsed.seasonConfig);
+              if (Array.isArray(parsed.cars)) setCars(parsed.cars);
+              if (Array.isArray(parsed.pets)) setPets(parsed.pets);
+              if (Array.isArray(parsed.maps)) setMaps(parsed.maps);
+              if (Array.isArray(parsed.racers)) setRacers(parsed.racers);
+              if (Array.isArray(parsed.globalRanking)) setGlobalRanking(parsed.globalRanking);
+            } catch (err) {
+              alert('File JSON không hợp lệ.');
+            }
+          };
+          reader.readAsText(file);
+        }
+
+        function handleResetDefaults() {
+          setSeasonConfig(Data.DEFAULT_SEASON_CONFIG);
+          setCars(Data.DEFAULT_CARS);
+          setPets(Data.DEFAULT_PETS);
+          setMaps(Data.DEFAULT_MAPS);
+          setRacers(Data.DEFAULT_RACERS);
+          setGlobalRanking(Data.DEFAULT_GLOBAL_RANKING);
+          handleResetSimResults();
+          try { localStorage.removeItem(STORAGE_CONFIG_KEY); } catch (e) { }
+        }
+
+        function copyClientUrl() {
+          const base = window.location.href.split('?')[0];
+          const clientUrl = base + '?mode=client';
+          navigator.clipboard.writeText(clientUrl).then(function () {
+            setCopiedClientLink(true);
+            setTimeout(function () { setCopiedClientLink(false); }, 2500);
+          });
+        }
+
+        const tabs = [
+          { id: 'overview', label: '1. Tổng Quan & Lộ Trình 13 Ngày' },
+          { id: 'rules', label: '2. Luật Ban/Pick & Sổ Tay' },
+          { id: 'garage', label: '3. Kho Xe, Pet & Map' },
+          { id: 'scoring', label: '4. New Era Ranking & Điểm' },
+          { id: 'simulator', label: isBtc ? '5. Mô Phỏng & Swiss Stage' : '5. Sơ Đồ Swiss & Playoff' }
+        ];
+
+        return html`
+          <div className="min-h-screen flex flex-col">
+            <!-- Top Navigation Bar (White-Blue) -->
+            <header className="bg-white/95 backdrop-blur border-b border-blue-200 sticky top-0 z-30 no-print">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl ne-badge-logo flex items-center justify-center p-1.5 shrink-0">
+                    <img src="logo_trang.png" alt="Logo" className="w-full h-full object-contain" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-chakra font-bold text-base sm:text-lg text-slate-900 uppercase">
+                        ${seasonConfig.seasonName}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-blue-600 text-white text-[10px] font-bold">
+                        ${seasonConfig.seasonCode}
+                      </span>
+                      ${!isLockedClient && html`
+                        <span className=${'px-2 py-0.5 rounded text-[10px] font-bold border ' + (isBtc ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-emerald-50 text-emerald-700 border-emerald-200')}>
+                          ${isBtc ? 'Chế độ BTC' : 'Xem trước Client'}
+                        </span>
+                      `}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-medium">
+                      Cổng Kế Hoạch, Luật Thi Đấu & New Era Ranking Clan New Era
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <!-- Chỉ hiện switcher khi không bị khóa ?mode=client -->
+                  ${!isLockedClient && html`
+                    <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-bold">
+                      <button
+                        onClick=${function () { setRoleMode('client'); }}
+                        className=${'px-2.5 py-1.5 rounded-lg transition-all ' + (!isBtc ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900')}
+                      >
+                        Client (Xem)
+                      </button>
+                      <button
+                        onClick=${function () { setRoleMode('btc'); }}
+                        className=${'px-2.5 py-1.5 rounded-lg transition-all ' + (isBtc ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900')}
+                      >
+                        BTC (Quản trị)
+                      </button>
+                    </div>
+                  `}
+
+                  ${isBtc && html`
+                    <button
+                      onClick=${copyClientUrl}
+                      className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all"
+                      title="Copy đường dẫn chỉ xem (?mode=client) để gửi cho Tuyển thủ"
+                    >
+                      ${copiedClientLink ? 'Đã Copy Link Client!' : 'Copy Link Client'}
+                    </button>
+                  `}
+
+                  <a
+                    href="swiss.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 text-xs font-chakra font-bold transition-all"
+                  >
+                    Broadcast Swiss ↗
+                  </a>
+                  <button
+                    onClick=${function () { window.print(); }}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all"
+                  >
+                    In / PDF
+                  </button>
+                </div>
+              </div>
+
+              <!-- Tabs -->
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-2.5 flex flex-wrap gap-1.5">
+                ${tabs.map(function (t) {
+                  const active = activeTab === t.id;
+                  return html`
+                    <button
+                      key=${t.id}
+                      onClick=${function () { setActiveTab(t.id); }}
+                      className=${'px-3.5 py-2 rounded-xl font-chakra font-bold text-xs sm:text-sm transition-all border ' + (active ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-blue-50/50 text-slate-700 border-blue-100 hover:bg-blue-100/70')}
+                    >
+                      ${t.label}
+                    </button>
+                  `;
+                })}
+              </div>
+            </header>
+
+            <!-- Main Content -->
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+              ${activeTab === 'overview' && html`
+                <${Views.OverviewView}
+                  isBtc=${isBtc}
+                  seasonConfig=${seasonConfig}
+                  onUpdateSeason=${setSeasonConfig}
+                  cars=${cars}
+                  pets=${pets}
+                  maps=${maps}
+                  schedule13Days=${Data.SCHEDULE_13_DAYS}
+                  onExportJson=${handleExportJson}
+                  onImportJson=${handleImportJson}
+                  onResetDefaults=${handleResetDefaults}
+                />
+              `}
+              ${activeTab === 'rules' && html`
+                <${Views.RulesHandbookView} seasonConfig=${seasonConfig} />
+              `}
+              ${activeTab === 'garage' && html`
+                <${Views.GarageMapsView}
+                  isBtc=${isBtc}
+                  cars=${cars} setCars=${setCars}
+                  pets=${pets} setPets=${setPets}
+                  maps=${maps} setMaps=${setMaps}
+                />
+              `}
+              ${activeTab === 'scoring' && html`
+                <${Views.ScoringGprView}
+                  isBtc=${isBtc}
+                  globalRanking=${globalRanking}
+                  setGlobalRanking=${setGlobalRanking}
+                />
+              `}
+              ${activeTab === 'simulator' && html`
+                <${Views.SimulatorView}
+                  isBtc=${isBtc}
+                  seasonConfig=${seasonConfig}
+                  racers=${racers}
+                  setRacers=${setRacers}
+                  seedMethod=${seedMethod}
+                  setSeedMethod=${setSeedMethod}
+                  drawSeed=${drawSeed}
+                  setDrawSeed=${setDrawSeed}
+                  playInWinners=${playInWinners}
+                  setPlayInWinners=${setPlayInWinners}
+                  swissWinners=${swissWinners}
+                  setSwissWinners=${setSwissWinners}
+                  playoffWinners=${playoffWinners}
+                  setPlayoffWinners=${setPlayoffWinners}
+                  simData=${simData}
+                  onResetSimResults=${handleResetSimResults}
+                  onAutoSimulateSwiss=${handleAutoSimulateSwiss}
+                  onResetDefaultRacers=${function () { setRacers(Data.DEFAULT_RACERS); handleResetSimResults(); }}
+                />
+              `}
+            </main>
+          </div>
+        `;
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(html`<${App} />`);
+    })();
+  </script>
+</body>
+
+</html>
